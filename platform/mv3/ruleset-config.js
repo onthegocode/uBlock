@@ -41,6 +41,7 @@ export default [
             'https://easylist.to/easylist/easylist.txt',
             'https://easylist.to/easylist/easyprivacy.txt',
             'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext',
+            'https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-online.txt',
         ]
     },
     {

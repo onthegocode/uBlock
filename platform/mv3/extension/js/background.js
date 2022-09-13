@@ -1,27 +1,146 @@
+/*******************************************************************************
+
+    uBlock Origin - a browser extension to block requests.
+    Copyright (C) 2022-present Raymond Hill
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see {http://www.gnu.org/licenses/}.
+
+    Home: https://github.com/gorhill/uBlock
+*/
+
+/* jshint esversion:11 */
+
 'use strict';
 
-import rulesetDetails from '/rulesets/ruleset-details.js';
+/******************************************************************************/
+
+import { dnr, runtime } from './ext.js';
 
 /******************************************************************************/
 
-const dnr = chrome.declarativeNetRequest;
-const TRUSTED_DIRECTIVE_BASE_RULE_ID = 1000000;
+const RULE_REALM_SIZE = 1000000;
+const REGEXES_REALM_START = 1000000;
+const REGEXES_REALM_END = REGEXES_REALM_START + RULE_REALM_SIZE;
+const TRUSTED_DIRECTIVE_BASE_RULE_ID = 8000000;
+const CURRENT_CONFIG_BASE_RULE_ID = 9000000;
+
 const dynamicRuleMap = new Map();
+const rulesetDetails = new Map();
 
 /******************************************************************************/
 
-async function updateRegexRules() {
+function getPreviousVersion() {
+    const configRule = dynamicRuleMap.get(CURRENT_CONFIG_BASE_RULE_ID);
+    if ( configRule === undefined ) { return ''; }
+    const match = /^\|\|example.org\/([^\/]+)\//.exec(configRule.condition.urlFilter);
+    if ( match === null ) { return ''; }
+    return match[1];
+}
+
+function getCurrentVersion() {
+    return runtime.getManifest().version;
+}
+
+function setCurrentVersion(version) {
+    const rule = {
+        id: CURRENT_CONFIG_BASE_RULE_ID,
+        action: {
+            type: 'allow',
+        },
+        condition: {
+            urlFilter: `||example.org/${version}/`,
+        },
+    };
+    return dnr.updateDynamicRules({
+        addRules: [ rule ],
+        removeRuleIds: [ CURRENT_CONFIG_BASE_RULE_ID ],
+    });
+}
+
+/******************************************************************************/
+
+function fetchJSON(filename) {
+    return fetch(`/rulesets/${filename}.json`).then(response =>
+        response.json()
+    ).catch(reason => {
+        console.info(reason);
+    });
+}
+
+/******************************************************************************/
+
+function defaultRulesetsFromLanguage() {
+    const out = [ 'default' ];
+
+    const reTargetLang = new RegExp(
+        '\\b(' + navigator.languages.map(lang => {
+            const pos = lang.indexOf('-');
+            if ( pos === -1 ) { return lang; }
+            return lang.slice(0, pos);
+        }).join('|') + ')\\b'
+    );
+
+    for ( const [ id, details ] of rulesetDetails ) {
+        if ( typeof details.lang !== 'string' ) { continue; }
+        if ( reTargetLang.test(details.lang) === false ) { continue; }
+        out.push(id);
+    }
+    return out;
+}
+
+/******************************************************************************/
+
+async function updateRegexRules(dynamicRules) {
+    // Avoid testing already tested regexes
+    const validRegexSet = new Set(
+        dynamicRules.filter(rule =>
+            rule.condition?.regexFilter && true || false
+        ).map(rule =>
+            rule.condition.regexFilter
+        )
+    );
     const allRules = [];
     const toCheck = [];
-    for ( const details of rulesetDetails ) {
+
+    // Fetch regexes for all enabled rulesets
+    const toFetch = [];
+    for ( const details of rulesetDetails.values() ) {
         if ( details.enabled !== true ) { continue; }
-        for ( const rule of details.rules.regexes ) {
-            const regex = rule.condition.regexFilter;
-            const isCaseSensitive = rule.condition.isUrlFilterCaseSensitive === true;
+        toFetch.push(fetchJSON(`${details.id}.regexes`));
+    }
+    const regexRulesets = await Promise.all(toFetch);
+
+    // Validate fetched regexes
+    let regexRuleId = REGEXES_REALM_START;
+    for ( const rules of regexRulesets ) {
+        if ( Array.isArray(rules) === false ) { continue; }
+        for ( const rule of rules ) {
+            rule.id = regexRuleId++;
+            const {
+                regexFilter: regex,
+                isUrlFilterCaseSensitive: isCaseSensitive
+            } = rule.condition;
             allRules.push(rule);
-            toCheck.push(dnr.isRegexSupported({ regex, isCaseSensitive }));
+            toCheck.push(
+                validRegexSet.has(regex)
+                    ? { isSupported: true }
+                    : dnr.isRegexSupported({ regex, isCaseSensitive })
+            );
         }
     }
+
+    // Collate results
     const results = await Promise.all(toCheck);
     const newRules = [];
     for ( let i = 0; i < allRules.length; i++ ) {
@@ -33,11 +152,18 @@ async function updateRegexRules() {
             console.info(`${result.reason}: ${rule.condition.regexFilter}`);
         }
     }
+    console.info(
+        `Rejected regex filters: ${allRules.length-newRules.length} out of ${allRules.length}`
+    );
+
+    // Add validated regex rules to dynamic ruleset without affecting rules
+    // outside regex rule realm.
     const newRuleMap = new Map(newRules.map(rule => [ rule.id, rule ]));
     const addRules = [];
     const removeRuleIds = [];
     for ( const oldRule of dynamicRuleMap.values() ) {
-        if ( oldRule.id >= TRUSTED_DIRECTIVE_BASE_RULE_ID ) { continue; }
+        if ( oldRule.id < REGEXES_REALM_START ) { continue; }
+        if ( oldRule.id >= REGEXES_REALM_END ) { continue; }
         const newRule = newRuleMap.get(oldRule.id);
         if ( newRule === undefined ) {
             removeRuleIds.push(oldRule.id);
@@ -148,50 +274,140 @@ async function toggleTrustedSiteDirective(details) {
 
 /******************************************************************************/
 
-(async ( ) => {
+async function enableRulesets(ids) {
+    const afterIds = new Set(ids);
+    const beforeIds = new Set(await dnr.getEnabledRulesets());
+    console.log(`Enabled rulesets: ${afterIds}`);
+    const enableRulesetIds = [];
+    const disableRulesetIds = [];
+    for ( const id of afterIds ) {
+        if ( beforeIds.has(id) ) { continue; }
+        enableRulesetIds.push(id);
+    }
+    for ( const id of beforeIds ) {
+        if ( afterIds.has(id) ) { continue; }
+        disableRulesetIds.push(id);
+    }
+    if ( enableRulesetIds.length !== 0 || disableRulesetIds.length !== 0 ) {
+        return dnr.updateEnabledRulesets({ enableRulesetIds,disableRulesetIds  });
+    }
+}
+
+async function getEnabledRulesetsStats() {
+    const ids = await dnr.getEnabledRulesets();
+    const out = [];
+    for ( const id of ids ) {
+        const ruleset = rulesetDetails.get(id);
+        if ( ruleset === undefined ) { continue; }
+        out.push({
+            name: ruleset.name,
+            filterCount: ruleset.filters.accepted,
+            ruleCount: ruleset.rules.accepted,
+        });
+    }
+    return out;
+}
+
+/******************************************************************************/
+
+async function start() {
+    // Fetch enabled rulesets and dynamic rules
     const dynamicRules = await dnr.getDynamicRules();
     for ( const rule of dynamicRules ) {
         dynamicRuleMap.set(rule.id, rule);
     }
 
-    await updateRegexRules();
+    // Fetch ruleset details
+    await fetchJSON('ruleset-details').then(entries => {
+        if ( entries === undefined ) { return; }
+        for ( const entry of entries ) {
+            rulesetDetails.set(entry.id, entry);
+        }
+    });
 
     console.log(`Dynamic rule count: ${dynamicRuleMap.size}`);
+    console.log(`Available dynamic rule count: ${dnr.MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES - dynamicRuleMap.size}`);
+
+    // Check if first install.
+    const previousVersion = getPreviousVersion();
+    const currentVersion = getCurrentVersion();
+
+    // Enable a default set of rulesets at first install
+    if ( previousVersion === '' ) {
+        const enabledRulesets = defaultRulesetsFromLanguage(); 
+        await enableRulesets(enabledRulesets);
+        console.log(`First install: using default rulesets ${enabledRulesets}`);
+    }
+
+    // We need to update the regex rules only when ruleset version changes.
+    if ( currentVersion !== previousVersion ) {
+        await updateRegexRules(dynamicRules);
+        setCurrentVersion(currentVersion);
+        console.log(`Version change: ${previousVersion} => ${currentVersion}`);
+    }
 
     const enabledRulesets = await dnr.getEnabledRulesets();
     console.log(`Enabled rulesets: ${enabledRulesets}`);
-
-    console.log(`Available dynamic rule count: ${dnr.MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES - dynamicRuleMap.size}`);
 
     dnr.getAvailableStaticRuleCount().then(count => {
         console.log(`Available static rule count: ${count}`);
     });
 
     dnr.setExtensionActionOptions({ displayActionCountAsBadgeText: true });
+}
 
-    chrome.runtime.onMessage.addListener((request, sender, callback) => {
-        switch ( request.what ) {
-        case 'popupPanelData':
-            matchesTrustedSiteDirective(request).then(response => {
-                callback({
-                    isTrusted: response,
-                    rulesetDetails: rulesetDetails.filter(details =>
-                        details.enabled
-                    ).map(details => ({
-                        name: details.name,
-                        filterCount: details.filters.accepted,
-                        ruleCount: details.rules.accepted,
-                    })),
-                });
+/******************************************************************************/
+
+function messageListener(request, sender, callback) {
+    switch ( request.what ) {
+
+    case 'getRulesetData': {
+        dnr.getEnabledRulesets().then(enabledRulesets => {
+            callback({
+                enabledRulesets,
+                rulesetDetails: Array.from(rulesetDetails.values()),
             });
-            return true;
-        case 'toggleTrustedSiteDirective':
-            toggleTrustedSiteDirective(request).then(response => {
-                callback(response);
+        });
+        return true;
+    }
+
+    case 'applyRulesets': {
+        enableRulesets(request.enabledRulesets).then(( ) => {
+            callback();
+        });
+        return true;
+    }
+
+    case 'popupPanelData': {
+        Promise.all([
+            matchesTrustedSiteDirective(request),
+            getEnabledRulesetsStats(),
+        ]).then(results => {
+            callback({
+                isTrusted: results[0],
+                rulesetDetails: results[1],
             });
-            return true;
-        default:
-            break;
-        }
-    });
+        });
+        return true;
+    }
+
+    case 'toggleTrustedSiteDirective': {
+        toggleTrustedSiteDirective(request).then(response => {
+            callback(response);
+        });
+        return true;
+    }
+
+    default:
+        break;
+
+    }
+}
+
+/******************************************************************************/
+
+(async ( ) => {
+    await start();
+
+    runtime.onMessage.addListener(messageListener);
 })();
