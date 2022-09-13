@@ -25,7 +25,7 @@
 
 /******************************************************************************/
 
-import { dnr, runtime } from './ext.js';
+import { dnr, i18n, runtime } from './ext.js';
 
 /******************************************************************************/
 
@@ -38,32 +38,58 @@ const CURRENT_CONFIG_BASE_RULE_ID = 9000000;
 const dynamicRuleMap = new Map();
 const rulesetDetails = new Map();
 
-/******************************************************************************/
+const rulesetConfig = {
+    version: '',
+    enabledRulesets: [],
+};
 
-function getPreviousVersion() {
-    const configRule = dynamicRuleMap.get(CURRENT_CONFIG_BASE_RULE_ID);
-    if ( configRule === undefined ) { return ''; }
-    const match = /^\|\|example.org\/([^\/]+)\//.exec(configRule.condition.urlFilter);
-    if ( match === null ) { return ''; }
-    return match[1];
-}
+/******************************************************************************/
 
 function getCurrentVersion() {
     return runtime.getManifest().version;
 }
 
-function setCurrentVersion(version) {
-    const rule = {
-        id: CURRENT_CONFIG_BASE_RULE_ID,
-        action: {
-            type: 'allow',
-        },
-        condition: {
-            urlFilter: `||example.org/${version}/`,
-        },
-    };
+async function loadRulesetConfig() {
+    const configRule = dynamicRuleMap.get(CURRENT_CONFIG_BASE_RULE_ID);
+    if ( configRule === undefined ) {
+        rulesetConfig.enabledRulesets = await defaultRulesetsFromLanguage();
+        return;
+    }
+
+    const match = /^\|\|example.invalid\/([^\/]+)\/(?:([^\/]+)\/)?/.exec(
+        configRule.condition.urlFilter
+    );
+    if ( match === null ) { return; }
+
+    rulesetConfig.version = match[1];
+    if ( match[2] ) {
+        rulesetConfig.enabledRulesets =
+            decodeURIComponent(match[2] || '').split(' ');
+    }
+}
+
+async function saveRulesetConfig() {
+    let configRule = dynamicRuleMap.get(CURRENT_CONFIG_BASE_RULE_ID);
+    if ( configRule === undefined ) {
+        configRule = {
+            id: CURRENT_CONFIG_BASE_RULE_ID,
+            action: {
+                type: 'allow',
+            },
+            condition: {
+                urlFilter: '',
+            },
+        };
+    }
+
+    const version = rulesetConfig.version;
+    const enabledRulesets = encodeURIComponent(rulesetConfig.enabledRulesets.join(' '));
+    const urlFilter = `||example.invalid/${version}/${enabledRulesets}/`;
+    if ( urlFilter === configRule.condition.urlFilter ) { return; }
+    configRule.condition.urlFilter = urlFilter;
+
     return dnr.updateDynamicRules({
-        addRules: [ rule ],
+        addRules: [ configRule ],
         removeRuleIds: [ CURRENT_CONFIG_BASE_RULE_ID ],
     });
 }
@@ -76,27 +102,6 @@ function fetchJSON(filename) {
     ).catch(reason => {
         console.info(reason);
     });
-}
-
-/******************************************************************************/
-
-function defaultRulesetsFromLanguage() {
-    const out = [ 'default' ];
-
-    const reTargetLang = new RegExp(
-        '\\b(' + navigator.languages.map(lang => {
-            const pos = lang.indexOf('-');
-            if ( pos === -1 ) { return lang; }
-            return lang.slice(0, pos);
-        }).join('|') + ')\\b'
-    );
-
-    for ( const [ id, details ] of rulesetDetails ) {
-        if ( typeof details.lang !== 'string' ) { continue; }
-        if ( reTargetLang.test(details.lang) === false ) { continue; }
-        out.push(id);
-    }
-    return out;
 }
 
 /******************************************************************************/
@@ -277,7 +282,6 @@ async function toggleTrustedSiteDirective(details) {
 async function enableRulesets(ids) {
     const afterIds = new Set(ids);
     const beforeIds = new Set(await dnr.getEnabledRulesets());
-    console.log(`Enabled rulesets: ${afterIds}`);
     const enableRulesetIds = [];
     const disableRulesetIds = [];
     for ( const id of afterIds ) {
@@ -308,6 +312,36 @@ async function getEnabledRulesetsStats() {
     return out;
 }
 
+async function defaultRulesetsFromLanguage() {
+    const out = [ 'default' ];
+
+    const dropCountry = lang => {
+        const pos = lang.indexOf('-');
+        if ( pos === -1 ) { return lang; }
+        return lang.slice(0, pos);
+    };
+
+    const langSet = new Set();
+
+    await i18n.getAcceptLanguages().then(langs => {
+        for ( const lang of langs.map(dropCountry) ) {
+            langSet.add(lang);
+        }
+    });
+    langSet.add(dropCountry(i18n.getUILanguage()));
+
+    const reTargetLang = new RegExp(
+        `\\b(${Array.from(langSet).join('|')})\\b`
+    );
+
+    for ( const [ id, details ] of rulesetDetails ) {
+        if ( typeof details.lang !== 'string' ) { continue; }
+        if ( reTargetLang.test(details.lang) === false ) { continue; }
+        out.push(id);
+    }
+    return out;
+}
+
 /******************************************************************************/
 
 async function start() {
@@ -325,26 +359,22 @@ async function start() {
         }
     });
 
+    await loadRulesetConfig();
+
     console.log(`Dynamic rule count: ${dynamicRuleMap.size}`);
     console.log(`Available dynamic rule count: ${dnr.MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES - dynamicRuleMap.size}`);
 
-    // Check if first install.
-    const previousVersion = getPreviousVersion();
-    const currentVersion = getCurrentVersion();
-
-    // Enable a default set of rulesets at first install
-    if ( previousVersion === '' ) {
-        const enabledRulesets = defaultRulesetsFromLanguage(); 
-        await enableRulesets(enabledRulesets);
-        console.log(`First install: using default rulesets ${enabledRulesets}`);
-    }
+    await enableRulesets(rulesetConfig.enabledRulesets);
 
     // We need to update the regex rules only when ruleset version changes.
-    if ( currentVersion !== previousVersion ) {
+    const currentVersion = getCurrentVersion();
+    if ( currentVersion !== rulesetConfig.version ) {
         await updateRegexRules(dynamicRules);
-        setCurrentVersion(currentVersion);
-        console.log(`Version change: ${previousVersion} => ${currentVersion}`);
+        console.log(`Version change: ${rulesetConfig.version} => ${currentVersion}`);
+        rulesetConfig.version = currentVersion;
     }
+
+    saveRulesetConfig();
 
     const enabledRulesets = await dnr.getEnabledRulesets();
     console.log(`Enabled rulesets: ${enabledRulesets}`);
@@ -373,6 +403,9 @@ function messageListener(request, sender, callback) {
 
     case 'applyRulesets': {
         enableRulesets(request.enabledRulesets).then(( ) => {
+            rulesetConfig.enabledRulesets = request.enabledRulesets;
+            return saveRulesetConfig();
+        }).then(( ) => {
             callback();
         });
         return true;

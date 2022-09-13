@@ -23,7 +23,7 @@
 
 /******************************************************************************/
 
-import { runtime } from './ext.js';
+import { sendMessage } from './ext.js';
 import { i18n$ } from './i18n.js';
 import { dom, qs$, qsa$ } from './dom.js';
 import { simpleStorage } from './storage.js';
@@ -32,7 +32,7 @@ import { simpleStorage } from './storage.js';
 
 let cachedRulesetData = {};
 let filteringSettingsHash = '';
-let hideUnusedSet = new Set([ ]);
+let hideUnusedSet = new Set([ 'regions' ]);
 
 /******************************************************************************/
 
@@ -46,7 +46,7 @@ const renderFilterLists = function(soft) {
     const { enabledRulesets, rulesetDetails } = cachedRulesetData;
     const listGroupTemplate = qs$('#templates .groupEntry');
     const listEntryTemplate = qs$('#templates .listEntry');
-    const listStatsTemplate = i18n$('3pPerRulesetStats');
+    const listStatsTemplate = i18n$('perRulesetStats');
     const groupNames = new Map([ [ 'user', '' ] ]);
 
     const liFromListEntry = function(ruleset, li, hideUnused) {
@@ -83,8 +83,8 @@ const renderFilterLists = function(soft) {
             qs$('input[type="checkbox"]', li).checked = on;
         }
         li.title = listStatsTemplate
-            .replace('{{used}}', renderNumber(ruleset.rules.accepted))
-            .replace('{{total}}', renderNumber(ruleset.filters.accepted));
+            .replace('{{ruleCount}}', renderNumber(ruleset.rules.accepted))
+            .replace('{{filterCount}}', renderNumber(ruleset.filters.accepted));
         return li;
     };
 
@@ -156,7 +156,7 @@ const renderFilterLists = function(soft) {
             ),
         ],
         [
-            'multipurpose',
+            'misc',
             rulesetDetails.filter(ruleset =>
                 ruleset.id !== 'default' && typeof ruleset.lang !== 'string' 
             ),
@@ -187,9 +187,6 @@ const renderFilterLists = function(soft) {
         filteringSettingsHash = hashFromCurrentFromSettings();
     }
 
-    // https://github.com/gorhill/uBlock/issues/2394
-    document.body.classList.toggle('updating', cachedRulesetData.isUpdating);
-
     renderWidgets();
 };
 
@@ -215,16 +212,12 @@ const renderWidgets = function() {
         filterCount += ruleset.filters.accepted;
         ruleCount += ruleset.rules.accepted;
     }
-    qs$('#listsOfBlockedHostsPrompt').textContent =
-        `${ruleCount.toLocaleString()} rules, converted from ${filterCount.toLocaleString()} network filters`;
+    qs$('#listsOfBlockedHostsPrompt').textContent = i18n$('perRulesetStats')
+        .replace('{{ruleCount}}', ruleCount.toLocaleString())
+        .replace('{{filterCount}}', filterCount.toLocaleString());
 };
 
-/*******************************************************************************
-
-    Compute a hash from all the settings affecting how filter lists are loaded
-    in memory.
-
-**/
+/******************************************************************************/
 
 const hashFromCurrentFromSettings = function() {
     const hash = [];
@@ -263,7 +256,7 @@ const applyEnabledRulesets = async function() {
         enabledRulesets.push(liEntry.dataset.listkey);
     }
 
-    await runtime.sendMessage({
+    await sendMessage({
         what: 'applyRulesets',
         enabledRulesets,
     });
@@ -333,14 +326,6 @@ const toggleHideUnusedLists = function(which) {
 };
 
 dom.on(
-    qs$('#listsOfBlockedHostsPrompt'),
-    'click',
-    ( ) => {
-        toggleHideUnusedLists('*');
-    }
-);
-
-dom.on(
     qs$('#lists'),
     'click',
     '.groupEntry[data-groupkey] > .geDetails',
@@ -378,22 +363,17 @@ dom.on(
 
 /******************************************************************************/
 
-function init() {
-    runtime.sendMessage({
-        what: 'getRulesetData',
-    }).then(data => {
-        if ( !data ) { return; }
-        cachedRulesetData = data;
-        try {
-            renderFilterLists();
-        } catch(ex) {
-        }
-    }).catch(reason => {
-        console.trace(reason);
-        setTimeout(init, 200);
-    });
-}
-
-init();
+sendMessage({
+    what: 'getRulesetData',
+}).then(data => {
+    if ( !data ) { return; }
+    cachedRulesetData = data;
+    try {
+        renderFilterLists();
+    } catch(ex) {
+    }
+}).catch(reason => {
+    console.trace(reason);
+});
 
 /******************************************************************************/

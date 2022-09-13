@@ -319,7 +319,7 @@ async function main() {
     await rulesetFromURLS({
         id: 'default',
         name: 'Ads, trackers, miners, and more' ,
-        enabled: false,
+        enabled: true,
         urls: contentURLs,
     });
 

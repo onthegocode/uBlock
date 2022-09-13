@@ -25,7 +25,8 @@
 
 /******************************************************************************/
 
-import { browser, runtime } from './ext.js';
+import { browser, sendMessage } from './ext.js';
+import { i18n$ } from './i18n.js';
 import { simpleStorage } from './storage.js';
 
 /******************************************************************************/
@@ -44,7 +45,7 @@ async function toggleTrustedSiteDirective() {
     }
     if ( url instanceof URL === false ) { return; }
     const targetTrustedState = document.body.classList.contains('off');
-    const newTrustedState = await runtime.sendMessage({
+    const newTrustedState = await sendMessage({
         what: 'toggleTrustedSiteDirective',
         origin: url.origin,
         state: targetTrustedState,
@@ -84,7 +85,7 @@ async function init() {
 
     let popupPanelData;
     if ( url !== undefined ) {
-        popupPanelData = await runtime.sendMessage({
+        popupPanelData = await sendMessage({
             what: 'popupPanelData',
             origin: url.origin,
         });
@@ -113,7 +114,9 @@ async function init() {
             h1.textContent = details.name;
             parent.append(h1);
             const p = document.createElement('p');
-            p.textContent = `${details.ruleCount.toLocaleString()} rules, converted from ${details.filterCount.toLocaleString()} network filters`;
+            p.textContent = i18n$('perRulesetStats')
+                .replace('{{ruleCount}}', details.ruleCount.toLocaleString())
+                .replace('{{filterCount}}', details.filterCount.toLocaleString());
             parent.append(p);
         }
     }

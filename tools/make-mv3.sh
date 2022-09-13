@@ -24,7 +24,6 @@ mkdir -p $DES/img
 echo "*** uBlock0.mv3: Copying common files"
 cp -R src/css/fonts/* $DES/css/fonts/
 cp src/css/themes/default.css $DES/css/
-cp src/css/3p-filters.css $DES/css/
 cp src/css/common.css $DES/css/
 cp src/css/dashboard.css $DES/css/
 cp src/css/dashboard-common.css $DES/css/

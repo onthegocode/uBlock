@@ -24,6 +24,7 @@
 /******************************************************************************/
 
 import { simpleStorage } from './storage.js';
+import { dom, qs$ } from './dom.js';
 
 /******************************************************************************/
 
@@ -116,7 +117,12 @@ if ( self.location.hash.slice(1) === 'no-dashboard.html' ) {
     }
     loadDashboardPanel(pane !== null ? pane : '3p-filters.html', true);
 
-    document.querySelector('.tabButton').addEventListener('click', onTabClickHandler);
+    dom.on(
+        qs$('#dashboard-nav'),
+        'click',
+        '.tabButton',
+        onTabClickHandler
+    );
 
     // https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event
     window.addEventListener('beforeunload', ( ) => {
