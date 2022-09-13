@@ -144,7 +144,7 @@
     "description": "English: my-ublock-static-filters_{{datetime}}.txt"
   },
   "whitelistPrompt": {
-    "message": "The trusted site directives dictate on which web pages uBlock Origin should be disabled. One entry per line.",
+    "message": "The trusted site directives dictate on which web pages uBO Lite should be disabled. One entry per line.",
     "description": "A concise description of the 'Trusted sites' pane."
   },
   "whitelistImport": {
