@@ -38,7 +38,7 @@ uBlock Origin
 
 **An efficient blocker add-on for various browsers. Fast, potent, and lean.**
 
-uBlock Origin is **NOT** an "ad blocker": [it is a wide-spectrum blocker][Blocking] -- which happens to be able to function as a mere "ad blocker". The default behavior of uBlock Origin when newly installed is to block ads, trackers and malware sites -- through [_EasyList_][EasyList], [_EasyPrivacy_][EasyPrivacy], [_Peter Lowe’s ad/tracking/malware servers_][Peters List], [_Online Malicious URL Blocklist_][Malicious Blocklist], and uBlock Origin's [own filter lists][UBlock Filters].
+uBlock Origin is **NOT** an "ad blocker": [it is a wide-spectrum blocker][Blocking] -- which happens to be able to function as a mere "ad blocker". The default behavior of uBlock Origin, when newly installed is to block ads, trackers, and malware sites -- through [_EasyList_][EasyList], [_EasyPrivacy_][EasyPrivacy], [_Peter Lowe’s ad/tracking/malware servers_][Peters List], [_Online Malicious URL Blocklist_][Malicious Blocklist], and uBlock Origin's [own filter lists][UBlock Filters].
 
 ***
 
@@ -66,9 +66,9 @@ For support/questions/help, there is [/r/uBlockOrigin][Reddit] on Reddit.
 
 ## Philosophy
 
-uBlock Origin (or uBlock₀) is not an *ad blocker*; it's a general-purpose blocker. uBlock Origin blocks ads through its support of the [Adblock Plus filter syntax][How To Filters]. uBlock Origin [extends][Extended Syntax] the syntax and is designed to work with custom rules and filters. Furthermore, advanced mode allows uBlock Origin to work in [default-deny mode][Default Deny], which mode will cause [all 3rd-party network requests][3rd Party Requests] to be blocked by default, unless allowed by the user.
+uBlock Origin (or uBlock₀) is not an *ad blocker*; it's a general-purpose blocker. uBlock Origin blocks ads through its support of the [Adblock Plus filter syntax][How To Filters]. uBlock Origin [extends][Extended Syntax] the syntax and is designed to work with custom rules and filters. Furthermore, the advanced mode allows uBlock Origin to work in [default-deny mode][Default Deny], which mode will cause [all 3rd-party network requests][3rd Party Requests] to be blocked by default unless allowed by the user.
 
-That said, it's important to note that using a blocker is **NOT** [theft]. Don't fall for this creepy idea. The _ultimate_ logical consequence of `blocking = theft` is the criminalisation of the inalienable right to privacy.
+That said, it's important to note that using a blocker is **NOT** [theft]. Don't fall for this creepy idea. The _ultimate_ logical consequence of `blocking = theft` is the criminalization of the inalienable right to privacy.
 
 Ads, "unintrusive" or not, are just the visible portions of privacy-invading apparatus entering your browser when you visit most sites nowadays. **uBlock Origin's main goal is to help users neutralize such privacy-invading apparatus** — in a way that welcomes those users who don't wish to use more technical, involved means (such as [uMatrix]).
 
@@ -142,7 +142,7 @@ See the [releases pages][Releases] for a history of releases and highlights for 
 Free. Open source. For users by users. No donations sought.
 
 Without the preset lists of filters, this extension is nothing. So if ever you
-really do want to contribute something, think about the people working hard
+do want to contribute something, think about the people working hard
 to maintain the filter lists you are using, which were made available to use by
 all for free.
 
